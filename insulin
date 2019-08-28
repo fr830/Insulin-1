@@ -1,0 +1,92 @@
+#!/bin/sh
+
+ERR1="insulin: File not found on the repositories - says Misaka"
+ERR2="insulin: You don't have enough permission to do that - complains Misaka"
+
+repo_add(){
+    echo "$1" >> "$DATA/repositories"
+    printf "%s\n" "$1"
+}
+
+repo_query(){
+    grep "$1" "$DATA/repositories"
+}
+
+repo_get(){
+    while read -r REPO; do
+        LOC="$(wget -q "$REPO/files" -O - | grep "^$1:*" | cut -d: -f2-)"
+        [ -n "$LOC" ] && break
+    done < "$DATA/repositories"
+
+    [ -z "$LOC" ] && printf "%s\n" "$ERR1" >&2 && exit 1
+    wget -q "$REPO/$LOC"
+    printf "%s\n" "$REPO/$LOC"
+}
+
+repo_search(){
+    while read -r REPO; do
+        wget -q "$REPO/files" -O - | grep "$1" | cut -d: -f2- \
+            | sed "s/^/$REPO\//" 
+    done < "$DATA/repositories"
+}
+
+run_command(){
+    case "$1" in
+        add) repo_add "$2" ;;
+        query) repo_query "$2" ;;
+        get) repo_get "$2" ;;
+        search) repo_search "$2" ;;
+        *) help ;;
+    esac
+}
+
+help(){
+    printf "Usage: insulin [OPTION]... COMMAND [ARG]...\n" >&2
+    printf "Get files for gh or other hormones\n\n" >&2
+    printf "With no ARG, read standard input\n" >&2
+    printf "Avaliable commands:\n" >&2
+    printf "    add  	Adds a repo to the list\n" >&2
+    printf "    query	Searches repositories\n" >&2
+    printf "    get  	Downloads a file\n" >&2
+    printf "    search	Searches files on repos\n" >&2
+    printf "Options:\n" >&2
+    printf "    -d    data folder\n" >&2
+    exit 1
+}
+
+DATA=/usr/share/insulin
+
+while getopts ':d:' OPTION; do
+    case "$OPTION" in
+        d) DATA="$OPTARG" ;;
+        *) help ;;
+    esac
+done
+shift "$((OPTIND-1))"
+   
+[ ! -d "$DATA" ] && mkdir -p "$DATA" 2> /dev/null
+    
+if [ ! -w "$DATA" ]; then
+    printf "%s\n" "$ERR2" >&2
+    exit 1
+fi
+
+[ "$#" -eq 0 ] && help
+
+COMMAND="$1"; shift
+if [ "$#" -lt 1 ]; then
+    case "$COMMAND" in
+        add|query|get|search) ;;
+        *) help ;;
+    esac
+
+    while read -r LINE; do
+        run_command "$COMMAND" "$LINE"
+    done
+else
+    while [ "$#" -gt 0 ]; do
+        run_command "$COMMAND" "$1"
+        shift
+    done
+fi
+
